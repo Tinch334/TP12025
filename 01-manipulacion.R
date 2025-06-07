@@ -3,6 +3,7 @@
 
 # Cargo los paquetes que voy a usar
 library(tidyverse)
+library(dplyr)
 
 # Fijo el dataset
 attach(datos)
@@ -10,101 +11,34 @@ attach(datos)
 ######################
 # Renombrar columnas #
 ######################
-colnames(datos) <- c("id","altura","diametro","inclinacion","edad","tiempo",
-										 "brotes","especie","follaje","origen","atracnosis",
-										 "roya","manchas","ampollas")
+colnames(datos)[6] <- "personas_por_vivienda"
+colnames(datos)[13] <- "cantidad_de_dormitorios"
+colnames(datos)[24] <- "tipo_acceso_agua"
+colnames(datos)[33] <- "tipo_acceso_cloacas"
+colnames(datos)[50] <- "tipo_acceso_electricidad"
 
-###################
-# Modificar datos #
-###################
-datos_limpios <- datos %>% # Los pipelines permiten encadenar acciones
-	
-	mutate(   # Para crear nuevas variables y editar las ya existentes
-		
-		# Veo valores min y max de la variable para elegir una
-		# particion en intervalos apropiada
-		# min(altura)
-		# max(altura)
-		# sqrt(nrow(datos))
-		
-		# Creo una variable nueva, con la partición en intervalos de altura
-		altura_int = cut(altura,
-										 breaks = seq(from=0, to=50, by = 5),
-										 right = F),
-		
-		# Modifico las columnas de la variable de respuesta múltiple
-		# para dejarlas como indicadoras con valores 1 (en caso de presentar
-		# el atributo) y 0 (en caso de no presentarlo)
-		atracnosis = ifelse( atracnosis == "atracnosis", 1, 0 ),
-		roya = ifelse( roya == "roya", 1, 0 ),
-		manchas = ifelse( manchas == "manchas", 1, 0 ),
-		ampollas = ifelse( ampollas == "ampollas", 1, 0),
-		# Notar que los NA no entran dentro de la categoría "no presentar 
-		# el atributo", por lo que requieren un tratamiento particular:
-		
-		atracnosis = ifelse(is.na(atracnosis), 0, 1),
-		roya = ifelse(is.na(roya), 0, 1),
-		manchas = ifelse(is.na(manchas), 0, 1),
-		ampollas = ifelse(is.na(ampollas), 0, 1),
-		# Esto solo es correcto porque teníamos dos valores posibles en estas
-		# columnas: presencia de atributo (nombre de la plaga) y ausencia (NA).
-		# En los casos en los que se presenten ambas categorías además del NA
-		# correspondería trabajarlos como tres valores distintos (presencia,
-		# ausencia y faltante) y su tratamiento dependerá de lo que se desee hacer
-		
-		# Para condiciones ifelse múltiples puedo usar la función case_when
-		inclinacion_cate = case_when(inclinacion == 0 ~ "Sin inclinación",
-																 inclinacion < 15 ~ "Inclinación leve",
-																 inclinacion < 30 ~ "Inclinación moderada",
-																 TRUE ~ "Inclinación alta"),
-		
-		# Recodifico las etiquetas de una variable categórica
-		especie = recode(especie, "ala" = "Álamo",
-										 "casu" = "Casuarina",
-										 "euca" = "Eucalipto",
-										 "jaca" = "Jacarandá",
-										 "palo"  = "Palo borracho"),
-		
-		# Especifico ordinalidad a las categorías de una variable
-		tiempo = factor(tiempo,
-										levels = 1:5,
-										labels = c("Menos de 2 años", "Entre 2 y 5 años",
-																				 "Entre 5 y 10 años", "Entre 10 y 20 años",
-																				 "20 años o más"))
+#No me gusta dplyr, pero queda mas prolijo. Hacemos esto para acortar las etiquetas
+datos$"tipo_acceso_agua" <- recode(datos$"tipo_acceso_agua",
+                           "A través de una conexión sin medidor, es decir “informalmente”, sea a través de una conexión directa a la red pública o a través de una conexión indirecta a través de un vecinx “informalmente”" = "De forma informal",
+                           "A través de una conexión con medidor a la red pública" = "Con un medidor",
+                           "A través de un camión cisterna" = "Con un camion cisterna",
+                           "No poseo agua dentro de la vivienda y/o tengo que acarrear desde fuera del terreno en que se ubica mi vivienda" = "No poseo agua en la vivienda")
 
-	)
-
-##########################################
-# Seleccionar un subconjunto de columnas #
-##########################################
-
-# Opcion 1
-datos_chico1 <- datos_limpios %>%
-	select(   # Seleccionar las columnas que quiero conservar
-		id, altura, edad, follaje, inclinacion_cate
-	)
-
-# Opcion 2
-datos_chico2 <- datos_limpios %>%
-	select(   # Eliminar las columnas que no quiero conservar
-		-altura, -edad, -follaje, -inclinacion_cate
-	)
-
-# Opcion 3
-datos_orden <- datos_limpios %>%
-	select(   # Reordeno columnas
-		id, especie, tiempo, everything()
-	)
+#Generamos las variables que necesitamos
+datos$"indice_hacinamiento" <- (datos$"personas_por_vivienda" / datos$"cantidad_de_dormitorios")
 
 
-###########################################
-# Seleccionar un subconjunto de registros #
-###########################################
+datos$"posee_acceso_agua" <- ifelse(datos$"tipo_acceso_agua" %in%
+                                    c("Con un camion cisterna", "No poseeo agua en la vivienda"),
+                                    "No posee", "Posee")
 
-# Opción 1: por criterio
-datos_reducido1 <-datos_orden %>%
-	filter((brotes > 4 & origen == "Nativo/Autóctono") | tiempo == "20 años o más")
+datos$"posee_acceso_cloacas" <- ifelse(datos$"tipo_acceso_cloacas" %in%
+                                         c("Desagüe a red cloacal informal/vecinal", "No sabe"),
+                                       "No posee", "Posee")
 
-# Opción 2: por indexación
-datos_reducido2 <-datos_orden %>%
-	slice(1:500)
+datos$"posee_acceso_electricidad" <- ifelse(datos$"tipo_acceso_electricidad" == "No posee conexión a la red eléctrica en la vivienda",
+                                            "No posee", "Posee")
+
+datos$"posee_acceso_completo" <- ifelse(datos$"posee_acceso_agua" == "Posee" & datos$"posee_acceso_cloacas" == "Posee" & datos$"posee_acceso_electricidad" == "Posee",
+  "Posee todos los servicios",
+  "No posee 1 o mas servicios")
